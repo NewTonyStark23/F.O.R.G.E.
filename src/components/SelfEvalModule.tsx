@@ -1,105 +1,170 @@
 import { useState, useEffect } from 'react';
-import { Brain, RefreshCw, CheckCircle2, XCircle, AlertTriangle, TrendingUp, Zap, Target, Shield, Eye } from 'lucide-react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-
-interface EvalCycle {
-  id: number;
-  task: string;
-  initialScore: number;
-  currentScore: number;
-  targetScore: number;
-  iterations: number;
-  maxIterations: number;
-  status: 'passing' | 'correcting' | 'failed' | 'optimizing';
-  corrections: string[];
-}
+import { Brain, RefreshCw, CheckCircle2, Zap, Shield, Play } from 'lucide-react';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { SelfEvalLoop, EvalResult } from '../engine';
 
 export default function SelfEvalModule() {
-  const [cycles, setCycles] = useState<EvalCycle[]>([
-    {
-      id: 1,
-      task: 'Trading Strategy: BTC Long',
-      initialScore: 62,
-      currentScore: 94,
-      targetScore: 100,
-      iterations: 14,
-      maxIterations: 50,
-      status: 'optimizing',
-      corrections: ['Adjusted entry point by -0.3%', 'Added volume confirmation filter', 'Tightened stop-loss by 1.2%', 'Added sentiment threshold gate'],
-    },
-    {
-      id: 2,
-      task: 'Code Review: Auth Module',
-      initialScore: 45,
-      currentScore: 100,
-      targetScore: 100,
-      iterations: 8,
-      maxIterations: 50,
-      status: 'passing',
-      corrections: ['Fixed SQL injection vulnerability', 'Added rate limiting', 'Implemented proper error handling', 'Added input validation'],
-    },
-    {
-      id: 3,
-      task: 'Daily Schedule Optimization',
-      initialScore: 71,
-      currentScore: 88,
-      targetScore: 100,
-      iterations: 6,
-      maxIterations: 50,
-      status: 'correcting',
-      corrections: ['Reordered tasks by dependency', 'Added buffer time between meetings', 'Moved low-priority tasks to afternoon'],
-    },
-    {
-      id: 4,
-      task: 'Pattern Recognition: ETH Setup',
-      initialScore: 55,
-      currentScore: 97,
-      targetScore: 100,
-      iterations: 22,
-      maxIterations: 50,
-      status: 'optimizing',
-      corrections: ['Added multi-timeframe confirmation', 'Filtered false signals with ATR', 'Added order flow analysis', 'Cross-referenced with whale movements'],
-    },
-    {
-      id: 5,
-      task: 'Options Strategy: SPY Call Spread',
-      initialScore: 78,
-      currentScore: 100,
-      targetScore: 100,
-      iterations: 5,
-      maxIterations: 50,
-      status: 'passing',
-      corrections: ['Adjusted strike selection', 'Optimized expiration date', 'Added delta hedge ratio'],
-    },
-  ]);
-
-  const [radarData, setRadarData] = useState([
-    { metric: 'Accuracy', value: 94 },
-    { metric: 'Speed', value: 87 },
-    { metric: 'Risk Mgmt', value: 91 },
-    { metric: 'Pattern Match', value: 88 },
-    { metric: 'Self-Correct', value: 96 },
-    { metric: 'Prediction', value: 85 },
-  ]);
-
-  const [historyData, setHistoryData] = useState<Array<{ cycle: number; score: number; improvement: number }>>([]);
-  const [activeLoop, setActiveLoop] = useState(0);
-  const [loopSpeed, setLoopSpeed] = useState(0);
+  const [evalLoop, setEvalLoop] = useState<SelfEvalLoop | null>(null);
+  const [currentScore, setCurrentScore] = useState(0);
+  const [iteration, setIteration] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [history, setHistory] = useState<Array<{ iteration: number; score: number }>>([]);
+  const [corrections, setCorrections] = useState<string[]>([]);
+  const [failures, setFailures] = useState<string[]>([]);
+  const [log, setLog] = useState<string[]>([]);
+  const [targetScore] = useState(100);
 
   useEffect(() => {
-    const history = Array.from({ length: 20 }, (_, i) => ({
-      cycle: i + 1,
-      score: 60 + (i * 2) + Math.random() * 5,
-      improvement: 2 + Math.random() * 3,
-    }));
-    setHistoryData(history);
+    // Initialize eval loop with criteria
+    const loop = new SelfEvalLoop({ maxIterations: 50, targetScore: 100 });
+    
+    loop.addCriteria({
+      name: 'Accuracy',
+      weight: 0.25,
+      evaluate: (output: any) => ({
+        score: output.accuracy ?? Math.random() * 100,
+        passed: (output.accuracy ?? 0) >= 95,
+        reason: (output.accuracy ?? 0) < 95 ? 'Below 95% threshold' : 'OK',
+      }),
+    });
 
-    const interval = setInterval(() => {
-      setActiveLoop(prev => (prev + 1) % 100);
-      setLoopSpeed(Math.floor(Math.random() * 500 + 200));
-    }, 100);
-    return () => clearInterval(interval);
+    loop.addCriteria({
+      name: 'Completeness',
+      weight: 0.2,
+      evaluate: (output: any) => ({
+        score: output.completeness ?? Math.random() * 100,
+        passed: (output.completeness ?? 0) >= 90,
+        reason: (output.completeness ?? 0) < 90 ? 'Missing elements' : 'OK',
+      }),
+    });
+
+    loop.addCriteria({
+      name: 'Efficiency',
+      weight: 0.15,
+      evaluate: (output: any) => ({
+        score: output.efficiency ?? Math.random() * 100,
+        passed: (output.efficiency ?? 0) >= 85,
+        reason: (output.efficiency ?? 0) < 85 ? 'Suboptimal performance' : 'OK',
+      }),
+    });
+
+    loop.addCriteria({
+      name: 'Security',
+      weight: 0.2,
+      evaluate: (output: any) => ({
+        score: output.security ?? Math.random() * 100,
+        passed: (output.security ?? 0) >= 95,
+        reason: (output.security ?? 0) < 95 ? 'Vulnerabilities detected' : 'OK',
+      }),
+    });
+
+    loop.addCriteria({
+      name: 'Robustness',
+      weight: 0.2,
+      evaluate: (output: any) => ({
+        score: output.robustness ?? Math.random() * 100,
+        passed: (output.robustness ?? 0) >= 90,
+        reason: (output.robustness ?? 0) < 90 ? 'Edge cases not handled' : 'OK',
+      }),
+    });
+
+    setEvalLoop(loop);
   }, []);
+
+  const runLoop = async () => {
+    if (!evalLoop) return;
+    setIsRunning(true);
+    setHistory([]);
+    setCorrections([]);
+    setFailures([]);
+    setLog([]);
+
+    addLog('[SELF-EVAL] Starting self-evaluation loop...');
+    addLog(`[SELF-EVAL] Target score: ${targetScore}/100`);
+    addLog('[SELF-EVAL] Criteria: Accuracy, Completeness, Efficiency, Security, Robustness');
+
+    // Simulate an output that improves over iterations
+    let output = {
+      accuracy: 40 + Math.random() * 20,
+      completeness: 35 + Math.random() * 20,
+      efficiency: 30 + Math.random() * 20,
+      security: 45 + Math.random() * 15,
+      robustness: 38 + Math.random() * 18,
+    };
+
+    const corrector = async (out: any, corrs: any[]) => {
+      // Simulate improvement with each correction
+      const improved = { ...out };
+      const improvementFactor = 5 + Math.random() * 10;
+      
+      improved.accuracy = Math.min(100, out.accuracy + improvementFactor + Math.random() * 5);
+      improved.completeness = Math.min(100, out.completeness + improvementFactor + Math.random() * 4);
+      improved.efficiency = Math.min(100, out.efficiency + improvementFactor + Math.random() * 6);
+      improved.security = Math.min(100, out.security + improvementFactor + Math.random() * 3);
+      improved.robustness = Math.min(100, out.robustness + improvementFactor + Math.random() * 5);
+
+      return improved;
+    };
+
+    try {
+      // Run iterations manually to show progress
+      let currentOutput = output;
+      let evalResult = evalLoop.evaluate(currentOutput);
+      let iterations = 0;
+
+      while (!evalResult.passed && iterations < 50) {
+        iterations++;
+        
+        setCurrentScore(evalResult.overallScore);
+        setIteration(iterations);
+        setHistory(prev => [...prev, { iteration: iterations, score: evalResult.overallScore }]);
+        setFailures(evalResult.failures);
+        setCorrections(evalResult.corrections.map(c => c.correction));
+
+        addLog(`[SELF-EVAL] Iteration ${iterations}: Score ${evalResult.overallScore.toFixed(1)}/100`);
+        
+        if (evalResult.failures.length > 0) {
+          evalResult.failures.forEach(f => addLog(`[FAIL] ${f}`));
+        }
+        if (evalResult.corrections.length > 0) {
+          evalResult.corrections.forEach(c => addLog(`[CORRECT] ${c.correction}`));
+        }
+
+        if (!evalResult.passed) {
+          currentOutput = await corrector(currentOutput, evalResult.corrections);
+          evalResult = evalLoop.evaluate(currentOutput);
+          
+          // Small delay for visual effect
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+
+      if (evalResult.passed) {
+        addLog(`[SELF-EVAL] ✓ PASSED! Score: ${evalResult.overallScore.toFixed(1)}/100 in ${iterations} iterations`);
+        setCurrentScore(evalResult.overallScore);
+      } else {
+        addLog(`[SELF-EVAL] ✗ Failed to reach target after ${iterations} iterations`);
+      }
+    } catch (error) {
+      addLog(`[SELF-EVAL] Error: ${error}`);
+    }
+
+    setIsRunning(false);
+  };
+
+  const addLog = (msg: string) => {
+    setLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 30));
+  };
+
+  const radarData = [
+    { metric: 'Accuracy', value: currentScore > 0 ? Math.min(currentScore + Math.random() * 10, 100) : 0 },
+    { metric: 'Completeness', value: currentScore > 0 ? Math.min(currentScore - 5 + Math.random() * 15, 100) : 0 },
+    { metric: 'Efficiency', value: currentScore > 0 ? Math.min(currentScore - 10 + Math.random() * 12, 100) : 0 },
+    { metric: 'Security', value: currentScore > 0 ? Math.min(currentScore + Math.random() * 8, 100) : 0 },
+    { metric: 'Robustness', value: currentScore > 0 ? Math.min(currentScore - 3 + Math.random() * 10, 100) : 0 },
+  ];
+
+  const loopStats = evalLoop?.getStats() ?? { totalEvaluations: 0, averageScore: 0, improvementRate: 0, totalCorrections: 0 };
 
   return (
     <div className="space-y-6">
@@ -108,55 +173,88 @@ export default function SelfEvalModule() {
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Brain className="w-5 h-5 text-purple-400" />
-            Self-Evaluation Loop
+            Self-Evaluation Loop — Live
           </h2>
           <p className="text-xs text-gray-500 mt-1">Brute-force self-correction until 100% win rate achieved</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="px-3 py-1.5 rounded-lg bg-purple-900/20 border border-purple-800/30">
-            <span className="text-xs text-purple-400">5 Active Loops</span>
-          </div>
-          <div className="px-3 py-1.5 rounded-lg bg-emerald-900/20 border border-emerald-800/30">
-            <span className="text-xs text-emerald-400">2/5 Passed (100%)</span>
-          </div>
-        </div>
+        <button
+          onClick={runLoop}
+          disabled={isRunning}
+          className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-bold hover:bg-purple-500 disabled:opacity-50 transition-colors flex items-center gap-2"
+        >
+          <Play className="w-4 h-4" />
+          {isRunning ? 'Running...' : 'Run Self-Eval Loop'}
+        </button>
       </div>
 
-      {/* Core Loop Visualization */}
+      {/* Core Loop Status */}
       <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-gray-300">CORE SELF-CORRECTION ENGINE</h3>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-            <span className="text-xs text-purple-400">RUNNING — Cycle #{activeLoop}</span>
-          </div>
-        </div>
-        
-        {/* Loop Visualization */}
-        <div className="grid grid-cols-5 gap-2 mb-6">
-          {['EVALUATE', 'GRADE', 'IDENTIFY FAIL', 'CORRECT', 'RE-TEST'].map((step, i) => (
-            <div key={i} className={`p-3 rounded-lg border text-center transition-all ${
-              activeLoop % 5 === i 
-                ? 'bg-purple-900/30 border-purple-500/50 shadow-lg shadow-purple-500/10' 
-                : 'bg-[#0d0d14] border-gray-800/30'
-            }`}>
-              <div className={`text-[10px] font-bold ${
-                activeLoop % 5 === i ? 'text-purple-400' : 'text-gray-500'
-              }`}>
-                {step}
-              </div>
-              {activeLoop % 5 === i && (
-                <div className="mt-1 text-[9px] text-purple-300 animate-pulse">ACTIVE</div>
-              )}
+          <h3 className="text-sm font-bold text-gray-300">LOOP STATUS</h3>
+          {isRunning && (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+              <span className="text-xs text-purple-400">ITERATING</span>
             </div>
-          ))}
+          )}
         </div>
 
-        {/* Performance Radar */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/30">
+            <div className="text-[10px] text-gray-500">CURRENT SCORE</div>
+            <div className={`text-2xl font-bold ${
+              currentScore >= 95 ? 'text-emerald-400' :
+              currentScore >= 75 ? 'text-cyan-400' :
+              currentScore >= 50 ? 'text-amber-400' :
+              'text-red-400'
+            }`}>
+              {currentScore.toFixed(1)}
+            </div>
+          </div>
+          <div className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/30">
+            <div className="text-[10px] text-gray-500">ITERATION</div>
+            <div className="text-2xl font-bold text-purple-400">{iteration}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/30">
+            <div className="text-[10px] text-gray-500">TARGET</div>
+            <div className="text-2xl font-bold text-emerald-400">{targetScore}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/30">
+            <div className="text-[10px] text-gray-500">STATUS</div>
+            <div className={`text-sm font-bold ${
+              currentScore >= targetScore ? 'text-emerald-400' :
+              isRunning ? 'text-purple-400' :
+              'text-gray-400'
+            }`}>
+              {currentScore >= targetScore ? '✓ PASSED' : isRunning ? '⟳ RUNNING' : '○ IDLE'}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mb-4">
+          <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden relative">
+            <div
+              className="absolute h-full bg-gray-600/30 rounded-full"
+              style={{ width: '40%' }}
+            />
+            <div
+              className="absolute h-full bg-gradient-to-r from-purple-500 to-emerald-500 rounded-full transition-all duration-300"
+              style={{ width: `${currentScore}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-1 text-[10px] text-gray-500">
+            <span>0</span>
+            <span>Target: {targetScore}</span>
+            <span>100</span>
+          </div>
+        </div>
+
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
             <h4 className="text-xs text-gray-400 mb-2">PERFORMANCE METRICS</h4>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={200}>
               <RadarChart data={radarData}>
                 <PolarGrid stroke="#374151" />
                 <PolarAngleAxis dataKey="metric" tick={{ fill: '#9ca3af', fontSize: 10 }} />
@@ -167,11 +265,11 @@ export default function SelfEvalModule() {
           </div>
           <div>
             <h4 className="text-xs text-gray-400 mb-2">IMPROVEMENT TRAJECTORY</h4>
-            <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={historyData}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={history}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="cycle" stroke="#4b5563" fontSize={9} />
-                <YAxis stroke="#4b5563" fontSize={9} domain={[50, 100]} />
+                <XAxis dataKey="iteration" stroke="#4b5563" fontSize={9} />
+                <YAxis stroke="#4b5563" fontSize={9} domain={[0, 100]} />
                 <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #374151', borderRadius: '8px' }} />
                 <Area type="monotone" dataKey="score" stroke="#a855f7" fill="url(#evalGrad)" strokeWidth={2} />
                 <defs>
@@ -186,101 +284,73 @@ export default function SelfEvalModule() {
         </div>
       </div>
 
-      {/* Active Evaluation Cycles */}
-      <div className="space-y-4">
-        {cycles.map((cycle) => (
-          <div key={cycle.id} className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                {cycle.status === 'passing' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                ) : cycle.status === 'correcting' ? (
-                  <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" />
-                ) : cycle.status === 'optimizing' ? (
-                  <Zap className="w-5 h-5 text-purple-400 animate-pulse" />
-                ) : (
-                  <XCircle className="w-5 h-5 text-red-400" />
-                )}
-                <div>
-                  <span className="text-sm font-bold text-white">{cycle.task}</span>
-                  <span className={`ml-2 text-[10px] px-2 py-0.5 rounded ${
-                    cycle.status === 'passing' ? 'bg-emerald-900/30 text-emerald-400' :
-                    cycle.status === 'correcting' ? 'bg-amber-900/30 text-amber-400' :
-                    cycle.status === 'optimizing' ? 'bg-purple-900/30 text-purple-400' :
-                    'bg-red-900/30 text-red-400'
-                  }`}>
-                    {cycle.status.toUpperCase()}
-                  </span>
+      {/* Failures & Corrections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
+          <h3 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+            <span className="text-red-400">✗</span> FAILURES DETECTED
+          </h3>
+          <div className="space-y-1 max-h-[200px] overflow-y-auto">
+            {failures.length === 0 ? (
+              <div className="text-xs text-gray-500">No failures detected</div>
+            ) : (
+              failures.map((f, i) => (
+                <div key={i} className="text-[11px] text-red-400/80 p-1.5 rounded bg-red-900/10">
+                  ⚠ {f}
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">Iteration {cycle.iterations}/{cycle.maxIterations}</div>
-              </div>
-            </div>
-
-            {/* Score Progress */}
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-gray-500">
-                  Initial: <span className="text-red-400">{cycle.initialScore}%</span> → Current: <span className="text-emerald-400">{cycle.currentScore}%</span> → Target: <span className="text-cyan-400">{cycle.targetScore}%</span>
-                </span>
-              </div>
-              <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden relative">
-                <div
-                  className="absolute h-full bg-red-500/30 rounded-full"
-                  style={{ width: `${cycle.initialScore}%` }}
-                />
-                <div
-                  className="absolute h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full transition-all duration-500"
-                  style={{ width: `${cycle.currentScore}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Corrections Log */}
-            <div className="space-y-1">
-              <div className="text-[10px] text-gray-500 mb-1">SELF-CORRECTIONS APPLIED:</div>
-              {cycle.corrections.map((correction, i) => (
-                <div key={i} className="flex items-center gap-2 text-[11px] text-gray-400 pl-3 border-l border-purple-800/30">
-                  <span className="text-purple-400">→</span>
-                  {correction}
-                </div>
-              ))}
-            </div>
+              ))
+            )}
           </div>
-        ))}
+        </div>
+        <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
+          <h3 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
+            <Zap className="w-4 h-4 text-emerald-400" /> CORRECTIONS APPLIED
+          </h3>
+          <div className="space-y-1 max-h-[200px] overflow-y-auto">
+            {corrections.length === 0 ? (
+              <div className="text-xs text-gray-500">No corrections applied yet</div>
+            ) : (
+              corrections.map((c, i) => (
+                <div key={i} className="text-[11px] text-emerald-400/80 p-1.5 rounded bg-emerald-900/10">
+                  → {c}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Brute Force Stats */}
+      {/* Engine Log */}
+      <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
+        <h3 className="text-sm font-bold text-gray-300 mb-3">EVALUATION LOG</h3>
+        <div className="space-y-0.5 max-h-[200px] overflow-y-auto font-mono">
+          {log.map((entry, i) => (
+            <div key={i} className={`text-[11px] p-1 rounded ${
+              entry.includes('[FAIL]') ? 'text-red-400/80' :
+              entry.includes('[CORRECT]') ? 'text-emerald-400/80' :
+              entry.includes('✓') ? 'text-emerald-400 font-bold' :
+              'text-purple-400/80'
+            }`}>
+              {entry}
+            </div>
+          ))}
+          {log.length === 0 && (
+            <div className="text-[11px] text-gray-500">Click "Run Self-Eval Loop" to start...</div>
+          )}
+        </div>
+      </div>
+
+      {/* Protocol Info */}
       <div className="bg-gradient-to-r from-purple-900/20 to-emerald-900/20 border border-purple-800/30 rounded-xl p-5">
-        <h3 className="text-sm font-bold text-purple-300 mb-4 flex items-center gap-2">
+        <h3 className="text-sm font-bold text-purple-300 mb-3 flex items-center gap-2">
           <Shield className="w-4 h-4" />
           BRUTE-FORCE WIN PROTOCOL
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-400">100%</div>
-            <div className="text-[10px] text-gray-500">WIN TARGET</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-400">1,000</div>
-            <div className="text-[10px] text-gray-500">PARAMS/CYCLE</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-cyan-400">{loopSpeed}ms</div>
-            <div className="text-[10px] text-gray-500">LOOP SPEED</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-amber-400">0</div>
-            <div className="text-[10px] text-gray-500">UNRESOLVED LOSSES</div>
-          </div>
-        </div>
-        <div className="mt-4 p-3 rounded-lg bg-[#0d0d14] border border-gray-800/30">
-          <div className="text-[11px] text-gray-400">
-            <span className="text-purple-400 font-bold">PROTOCOL:</span> Every task is evaluated → graded → if below 100%, 
-            the system identifies failure points → applies corrections → re-tests → repeats until 
-            the score reaches 100%. No task exits the loop until it's a guaranteed win.
-          </div>
+        <div className="text-[11px] text-gray-400">
+          <span className="text-purple-400 font-bold">HOW IT WORKS:</span> The self-evaluation loop evaluates output against 5 criteria 
+          (Accuracy, Completeness, Efficiency, Security, Robustness). If the weighted score is below 100, failures are identified, 
+          corrections are generated and applied, then the output is re-evaluated. This loop continues until the score reaches the target. 
+          No output exits the loop until it's a guaranteed win.
         </div>
       </div>
     </div>

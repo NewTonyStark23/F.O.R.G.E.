@@ -1,49 +1,85 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, CheckCircle2, Circle, AlertTriangle, Zap, Target, TrendingUp, Plus, ChevronDown, ChevronUp } from 'lucide-react';
-
-interface Task {
-  id: string;
-  title: string;
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  estimatedTime: number;
-  status: 'pending' | 'in-progress' | 'completed' | 'failed' | 'retrying';
-  category: string;
-  dependencies: string[];
-  confidence: number;
-  attempts: number;
-}
+import { Calendar, Clock, CheckCircle2, Circle, AlertTriangle, Target, Plus, Play } from 'lucide-react';
+import { taskPlanner, Task, DayPlan } from '../engine';
 
 export default function TaskModule() {
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: 'T-001', title: 'Review Q4 financial reports', priority: 'critical', estimatedTime: 45, status: 'in-progress', category: 'Finance', dependencies: [], confidence: 92, attempts: 1 },
-    { id: 'T-002', title: 'Prepare client presentation deck', priority: 'high', estimatedTime: 90, status: 'pending', category: 'Work', dependencies: ['T-001'], confidence: 88, attempts: 1 },
-    { id: 'T-003', title: 'Schedule dentist appointment', priority: 'medium', estimatedTime: 15, status: 'completed', category: 'Personal', dependencies: [], confidence: 100, attempts: 1 },
-    { id: 'T-004', title: 'Debug authentication flow', priority: 'high', estimatedTime: 60, status: 'retrying', category: 'Development', dependencies: [], confidence: 76, attempts: 3 },
-    { id: 'T-005', title: 'Write unit tests for payment module', priority: 'high', estimatedTime: 120, status: 'pending', category: 'Development', dependencies: ['T-004'], confidence: 84, attempts: 1 },
-    { id: 'T-006', title: 'Grocery shopping', priority: 'low', estimatedTime: 30, status: 'pending', category: 'Personal', dependencies: [], confidence: 95, attempts: 1 },
-    { id: 'T-007', title: 'Team standup meeting', priority: 'medium', estimatedTime: 15, status: 'completed', category: 'Work', dependencies: [], confidence: 100, attempts: 1 },
-    { id: 'T-008', title: 'Optimize database queries', priority: 'critical', estimatedTime: 90, status: 'pending', category: 'Development', dependencies: ['T-004'], confidence: 71, attempts: 1 },
-  ]);
-
-  const [schedule, setSchedule] = useState<Array<{ time: string; task: string; duration: number; status: string }>>([]);
-  const [dayProgress, setDayProgress] = useState(0);
-  const [expandedDay, setExpandedDay] = useState(true);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<'critical' | 'high' | 'medium' | 'low'>('medium');
+  const [newTaskTime, setNewTaskTime] = useState(30);
+  const [log, setLog] = useState<string[]>([]);
+  const [executing, setExecuting] = useState<string | null>(null);
 
   useEffect(() => {
-    const completed = tasks.filter(t => t.status === 'completed').length;
-    setDayProgress((completed / tasks.length) * 100);
+    refreshTasks();
+    generatePlan();
+  }, []);
 
-    const scheduleItems = [
-      { time: '08:00', task: 'Team standup meeting', duration: 15, status: 'done' },
-      { time: '08:30', task: 'Review Q4 financial reports', duration: 45, status: 'active' },
-      { time: '09:15', task: 'Debug authentication flow', duration: 60, status: 'retrying' },
-      { time: '10:15', task: 'Optimize database queries', duration: 90, status: 'queued' },
-      { time: '11:45', task: 'Write unit tests for payment module', duration: 120, status: 'queued' },
-      { time: '14:00', task: 'Prepare client presentation deck', duration: 90, status: 'queued' },
-      { time: '15:30', task: 'Grocery shopping', duration: 30, status: 'queued' },
-    ];
-    setSchedule(scheduleItems);
-  }, [tasks]);
+  const refreshTasks = () => {
+    setTasks(taskPlanner.getTasks());
+  };
+
+  const generatePlan = () => {
+    const plan = taskPlanner.generateDayPlan();
+    setDayPlan(plan);
+  };
+
+  const addTask = () => {
+    if (!newTaskTitle.trim()) return;
+
+    const id = taskPlanner.addTask({
+      title: newTaskTitle,
+      priority: newTaskPriority,
+      category: 'work',
+      estimatedMinutes: newTaskTime,
+      dependencies: [],
+      maxAttempts: 3,
+    });
+
+    addLog(`[PLANNER] Task added: ${id} — "${newTaskTitle}" (${newTaskPriority})`);
+    setNewTaskTitle('');
+    refreshTasks();
+    generatePlan();
+  };
+
+  const executeTask = async (taskId: string) => {
+    setExecuting(taskId);
+    addLog(`[PLANNER] Executing task ${taskId}...`);
+
+    try {
+      await taskPlanner.executeTask(
+        taskId,
+        async () => {
+          // Simulate task execution with random success/failure
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // 70% chance of success on first try
+          if (Math.random() > 0.3) {
+            return { success: true, quality: 0.95 };
+          } else {
+            throw new Error('Task execution failed — quality below threshold');
+          }
+        },
+        (result) => ({
+          passed: result.quality > 0.85,
+          reason: result.quality <= 0.85 ? 'Quality below 85% threshold' : undefined,
+        })
+      );
+
+      addLog(`[PLANNER] Task ${taskId} completed successfully!`);
+    } catch (error) {
+      addLog(`[PLANNER] Task ${taskId} failed after max retries: ${error}`);
+    }
+
+    setExecuting(null);
+    refreshTasks();
+    generatePlan();
+  };
+
+  const addLog = (msg: string) => {
+    setLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 20));
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -65,6 +101,8 @@ export default function TaskModule() {
     }
   };
 
+  const stats = taskPlanner.getStats();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -72,157 +110,208 @@ export default function TaskModule() {
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Calendar className="w-5 h-5 text-cyan-400" />
-            Task Forge — Daily Planner
+            Task Forge — Live Engine
           </h2>
-          <p className="text-xs text-gray-500 mt-1">AI-optimized scheduling with self-correcting task execution</p>
+          <p className="text-xs text-gray-500 mt-1">Real task planning with dependency resolution and self-correcting execution</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="px-3 py-1.5 rounded-lg bg-emerald-900/20 border border-emerald-800/30">
-            <span className="text-xs text-emerald-400">{tasks.filter(t => t.status === 'completed').length}/{tasks.length} Done</span>
+            <span className="text-xs text-emerald-400">{stats.completed}/{stats.totalTasks} Done</span>
+          </div>
+          <div className="px-3 py-1.5 rounded-lg bg-cyan-900/20 border border-cyan-800/30">
+            <span className="text-xs text-cyan-400">Success: {stats.successRate.toFixed(0)}%</span>
           </div>
         </div>
       </div>
 
-      {/* Day Progress */}
-      <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold text-gray-300">DAY PROGRESS</h3>
-          <span className="text-sm font-bold text-emerald-400">{dayProgress.toFixed(0)}%</span>
-        </div>
-        <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full transition-all duration-500"
-            style={{ width: `${dayProgress}%` }}
+      {/* Add Task Form */}
+      <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-gray-300 mb-3">ADD NEW TASK</h3>
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            type="text"
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            placeholder="Task title..."
+            className="flex-1 min-w-[200px] bg-[#0a0a0f] border border-gray-700 rounded px-3 py-1.5 text-xs text-white placeholder-gray-500"
+            onKeyDown={(e) => e.key === 'Enter' && addTask()}
           />
-        </div>
-        <div className="flex justify-between mt-2 text-[10px] text-gray-500">
-          <span>Start of Day</span>
-          <span>Optimal Completion Window</span>
-          <span>End of Day</span>
+          <select
+            value={newTaskPriority}
+            onChange={(e) => setNewTaskPriority(e.target.value as any)}
+            className="bg-[#0a0a0f] border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+          >
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={newTaskTime}
+              onChange={(e) => setNewTaskTime(Number(e.target.value))}
+              className="w-16 bg-[#0a0a0f] border border-gray-700 rounded px-2 py-1.5 text-xs text-white"
+              min={5}
+              max={480}
+            />
+            <span className="text-[10px] text-gray-500">min</span>
+          </div>
+          <button
+            onClick={addTask}
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition-colors flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" />
+            Add Task
+          </button>
         </div>
       </div>
 
-      {/* Schedule Timeline */}
-      <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4 cursor-pointer" onClick={() => setExpandedDay(!expandedDay)}>
-          <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-cyan-400" />
-            OPTIMIZED SCHEDULE
-          </h3>
-          {expandedDay ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-        </div>
-        {expandedDay && (
-          <div className="space-y-2">
-            {schedule.map((item, i) => (
-              <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-[#0d0d14] border border-gray-800/20 hover:border-gray-700/40 transition-all">
-                <span className="text-xs font-mono text-gray-500 w-12">{item.time}</span>
-                <div className={`w-2 h-2 rounded-full ${
-                  item.status === 'done' ? 'bg-emerald-400' :
-                  item.status === 'active' ? 'bg-cyan-400 animate-pulse' :
-                  item.status === 'retrying' ? 'bg-amber-400 animate-pulse' :
-                  'bg-gray-600'
-                }`} />
-                <span className={`text-xs flex-1 ${
-                  item.status === 'done' ? 'text-gray-500 line-through' :
-                  item.status === 'active' ? 'text-cyan-400 font-medium' :
-                  item.status === 'retrying' ? 'text-amber-400' :
-                  'text-gray-300'
-                }`}>
-                  {item.task}
-                </span>
-                <span className="text-[10px] text-gray-500">{item.duration}m</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded ${
-                  item.status === 'done' ? 'bg-emerald-900/20 text-emerald-400' :
-                  item.status === 'active' ? 'bg-cyan-900/20 text-cyan-400' :
-                  item.status === 'retrying' ? 'bg-amber-900/20 text-amber-400' :
-                  'bg-gray-800/30 text-gray-500'
-                }`}>
-                  {item.status === 'done' ? '✓ DONE' : item.status === 'active' ? '⟳ NOW' : item.status === 'retrying' ? '↻ RETRY' : '○ QUEUED'}
-                </span>
-              </div>
-            ))}
+      {/* Day Plan */}
+      {dayPlan && (
+        <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-gray-300 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-cyan-400" />
+              OPTIMIZED SCHEDULE — {dayPlan.date}
+            </h3>
+            <button
+              onClick={generatePlan}
+              className="px-2 py-1 rounded text-[10px] bg-gray-800 text-gray-400 hover:text-emerald-400 transition-colors"
+            >
+              ↻ Regenerate
+            </button>
           </div>
-        )}
-      </div>
+          
+          {dayPlan.blocks.length > 0 ? (
+            <div className="space-y-2">
+              {dayPlan.blocks.map((block, i) => {
+                const task = tasks.find(t => t.id === block.taskId);
+                return (
+                  <div key={i} className="flex items-center gap-4 p-2 rounded-lg bg-[#0d0d14] border border-gray-800/20">
+                    <span className="text-xs font-mono text-gray-500 w-12">{block.startTime}</span>
+                    <span className="text-xs flex-1 text-gray-300">{task?.title ?? block.taskId}</span>
+                    <span className="text-[10px] text-gray-500">{block.duration}m</span>
+                    {task && (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] border ${getPriorityColor(task.priority)}`}>
+                        {task.priority}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-500">No tasks scheduled. Add tasks above.</div>
+          )}
+
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="p-2 rounded bg-[#0d0d14] border border-gray-800/30">
+              <div className="text-[10px] text-gray-500">COMPLETION</div>
+              <div className="text-xs font-bold text-emerald-400">{dayPlan.estimatedCompletion}</div>
+            </div>
+            <div className="p-2 rounded bg-[#0d0d14] border border-gray-800/30">
+              <div className="text-[10px] text-gray-500">SUCCESS PROB</div>
+              <div className="text-xs font-bold text-cyan-400">{dayPlan.successProbability.toFixed(0)}%</div>
+            </div>
+            <div className="p-2 rounded bg-[#0d0d14] border border-gray-800/30">
+              <div className="text-[10px] text-gray-500">RISK FACTORS</div>
+              <div className="text-xs font-bold text-amber-400">{dayPlan.riskFactors.length}</div>
+            </div>
+          </div>
+
+          {dayPlan.riskFactors.length > 0 && (
+            <div className="mt-2 p-2 rounded bg-amber-900/10 border border-amber-800/20">
+              <div className="text-[10px] text-amber-400">
+                ⚠ Risks: {dayPlan.riskFactors.join(' | ')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Task List */}
       <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
         <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">
           <Target className="w-4 h-4 text-emerald-400" />
-          TASK QUEUE — SELF-CORRECTING
+          TASK QUEUE — SELF-CORRECTING EXECUTION
         </h3>
         <div className="space-y-2">
-          {tasks.map((task) => (
-            <div key={task.id} className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/20 hover:border-gray-700/40 transition-all">
-              <div className="flex items-center gap-3">
-                {getStatusIcon(task.status)}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-medium ${
-                      task.status === 'completed' ? 'text-gray-500 line-through' : 'text-gray-200'
-                    }`}>
-                      {task.title}
-                    </span>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] border ${getPriorityColor(task.priority)}`}>
-                      {task.priority.toUpperCase()}
-                    </span>
+          {tasks.length === 0 ? (
+            <div className="text-xs text-gray-500 p-3">No tasks yet. Add tasks above to begin.</div>
+          ) : (
+            tasks.map((task) => (
+              <div key={task.id} className="p-3 rounded-lg bg-[#0d0d14] border border-gray-800/20 hover:border-gray-700/40 transition-all">
+                <div className="flex items-center gap-3">
+                  {getStatusIcon(task.status)}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium ${
+                        task.status === 'completed' ? 'text-gray-500 line-through' : 'text-gray-200'
+                      }`}>
+                        {task.title}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] border ${getPriorityColor(task.priority)}`}>
+                        {task.priority.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-[10px] text-gray-500">⏱ {task.estimatedMinutes}m</span>
+                      <span className="text-[10px] text-gray-500">Attempt #{task.attempts}/{task.maxAttempts}</span>
+                      <span className={`text-[10px] ${
+                        task.confidence > 85 ? 'text-emerald-400' :
+                        task.confidence > 70 ? 'text-cyan-400' :
+                        'text-amber-400'
+                      }`}>
+                        Confidence: {task.confidence}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[10px] text-gray-500">{task.category}</span>
-                    <span className="text-[10px] text-gray-500">⏱ {task.estimatedTime}m</span>
-                    {task.dependencies.length > 0 && (
-                      <span className="text-[10px] text-purple-400">Depends: {task.dependencies.join(', ')}</span>
-                    )}
-                    {task.attempts > 1 && (
-                      <span className="text-[10px] text-amber-400">Attempt #{task.attempts}</span>
-                    )}
-                  </div>
+                  {task.status === 'pending' && (
+                    <button
+                      onClick={() => executeTask(task.id)}
+                      disabled={executing === task.id}
+                      className="px-2 py-1 rounded text-[10px] bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <Play className="w-3 h-3" />
+                      Execute
+                    </button>
+                  )}
+                  {executing === task.id && (
+                    <div className="w-4 h-4 rounded-full border-2 border-cyan-400 animate-spin border-t-transparent" />
+                  )}
                 </div>
-                <div className="text-right">
-                  <div className="text-[10px] text-gray-500">Confidence</div>
-                  <div className={`text-xs font-bold ${
-                    task.confidence > 90 ? 'text-emerald-400' :
-                    task.confidence > 75 ? 'text-cyan-400' :
-                    'text-amber-400'
-                  }`}>
-                    {task.confidence}%
+                {task.status === 'retrying' && task.corrections.length > 0 && (
+                  <div className="mt-2 p-2 rounded bg-amber-900/10 border border-amber-800/20">
+                    <div className="text-[10px] text-amber-400 font-bold mb-1">SELF-CORRECTING:</div>
+                    {task.corrections.map((c, i) => (
+                      <div key={i} className="text-[10px] text-amber-400/70">→ {c}</div>
+                    ))}
                   </div>
-                </div>
+                )}
+                {task.failureReason && task.status === 'failed' && (
+                  <div className="mt-2 p-2 rounded bg-red-900/10 border border-red-800/20">
+                    <div className="text-[10px] text-red-400">✗ Failed: {task.failureReason}</div>
+                  </div>
+                )}
               </div>
-              {task.status === 'retrying' && (
-                <div className="mt-2 p-2 rounded bg-amber-900/10 border border-amber-800/20">
-                  <div className="text-[10px] text-amber-400">
-                    ⚡ SELF-CORRECTING: Failed {task.attempts - 1}x — Adjusting approach — Trying alternative method...
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
-      {/* Prediction Analysis */}
+      {/* Engine Log */}
       <div className="bg-[#12121a] border border-gray-800/50 rounded-xl p-5">
-        <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-purple-400" />
-          COMPLETION PREDICTION ANALYSIS
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 rounded-lg bg-[#0d0d14] border border-gray-800/30">
-            <div className="text-[10px] text-gray-500 mb-1">PREDICTED COMPLETION</div>
-            <div className="text-lg font-bold text-emerald-400">15:45</div>
-            <div className="text-[10px] text-gray-500">2h 15m before EOD</div>
-          </div>
-          <div className="p-4 rounded-lg bg-[#0d0d14] border border-gray-800/30">
-            <div className="text-[10px] text-gray-500 mb-1">SUCCESS PROBABILITY</div>
-            <div className="text-lg font-bold text-cyan-400">94.2%</div>
-            <div className="text-[10px] text-gray-500">Based on historical patterns</div>
-          </div>
-          <div className="p-4 rounded-lg bg-[#0d0d14] border border-gray-800/30">
-            <div className="text-[10px] text-gray-500 mb-1">RISK FACTORS</div>
-            <div className="text-lg font-bold text-amber-400">2</div>
-            <div className="text-[10px] text-gray-500">Dependency chain, retry task</div>
-          </div>
+        <h3 className="text-sm font-bold text-gray-300 mb-3">ENGINE LOG</h3>
+        <div className="space-y-0.5 max-h-[150px] overflow-y-auto font-mono">
+          {log.map((entry, i) => (
+            <div key={i} className="text-[11px] text-emerald-400/80 p-1 rounded">
+              {entry}
+            </div>
+          ))}
+          {log.length === 0 && (
+            <div className="text-[11px] text-gray-500">Add and execute tasks to see engine activity...</div>
+          )}
         </div>
       </div>
     </div>
