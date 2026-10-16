@@ -48,5 +48,11 @@ export type {
   Prediction, PredictionInput, PredictionModel, PredictionConfig 
 } from './PredictionEngine';
 
+// Prompt Clarifier
+export { PromptClarifier, promptClarifier } from './PromptClarifier';
+export type { 
+  ClarifiedPrompt, StructuredPrompt, Entity, Interpretation, Correction 
+} from './PromptClarifier';
+
 // Version
 export const VERSION = '1.0.0';
